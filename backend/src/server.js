@@ -15,6 +15,7 @@ dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env'
 
 const { Pool } = pg;
 const isLambda = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+const isVercel = Boolean(process.env.VERCEL);
 const app = express();
 
 const requiredEnv = [
@@ -32,7 +33,7 @@ const missingEnv = requiredEnv.filter(
 if (missingEnv.length > 0) {
   const message = `Missing backend environment variables: ${missingEnv.join(', ')}`;
   console.error(message);
-  if (isLambda) throw new Error(message);
+  if (isLambda || isVercel) throw new Error(message);
   process.exit(1);
 }
 
@@ -71,7 +72,8 @@ async function bootDatabaseMode() {
   }
 }
 
-const postgresAvailable = await bootDatabaseMode();
+const ready = bootDatabaseMode();
+const postgresAvailable = await ready;
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
@@ -148,7 +150,12 @@ app.get('/api/health', async (_req, res) => {
 
 export { app, pool };
 
-if (!isLambda) {
+export default async function handler(req, res) {
+  await ready;
+  return app(req, res);
+}
+
+if (!isLambda && !isVercel) {
   const port = Number(process.env.PORT || 8000);
   const server = app.listen(port, '127.0.0.1', () => {
     console.log(`SmartCancy API listening on http://127.0.0.1:${port}`);
